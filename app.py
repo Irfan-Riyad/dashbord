@@ -1,17 +1,32 @@
 import streamlit as st
 import pandas as pd
-from mlxtend.frequent_patterns import apriori, fpgrowth, association_rules
+
+# Try importing mlxtend, and show helpful message if it's missing
+try:
+    from mlxtend.frequent_patterns import apriori, fpgrowth, association_rules
+except ModuleNotFoundError:
+    st.error("""
+    ❌ The `mlxtend` package is missing.  
+    Please make sure your **requirements.txt** file includes:
+    ```
+    streamlit
+    pandas
+    scikit-learn
+    mlxtend
+    ```
+    Then redeploy your app.
+    """)
+    st.stop()
 
 # --- Streamlit Page Setup ---
 st.set_page_config(page_title="Frequent Pattern Mining Dashboard", layout="wide")
 
 st.title("🧩 Frequent Pattern Mining Dashboard")
-st.write("Mine frequent itemsets using **Apriori** or **FP-Growth** algorithms from the `mlxtend` library.")
+st.write("Mine frequent itemsets using **Apriori** or **FP-Growth** from the `mlxtend` library.")
 
-# --- Sidebar Controls ---
+# --- Sidebar Configuration ---
 st.sidebar.header("⚙️ Configuration")
 
-# Option to upload dataset or use sample data
 data_option = st.sidebar.radio(
     "Select Dataset Option:",
     ["Upload CSV", "Use Sample Dataset"]
@@ -45,13 +60,13 @@ else:
     else:
         df = None
 
-# --- Run Analysis ---
+# --- Analysis ---
 if df is not None:
     try:
-        st.write("### 📄 Preview of Uploaded Data")
+        st.write("### 📄 Preview of Data")
         st.dataframe(df.head())
 
-        # --- One-hot encoding if needed ---
+        # One-hot encode if needed
         if df.dtypes.isin(['object']).any():
             st.info("🧮 Detected non-numeric data — performing one-hot encoding.")
             df = pd.get_dummies(df)
@@ -59,7 +74,7 @@ if df is not None:
         st.write("### ✅ Encoded Data Preview")
         st.dataframe(df.head())
 
-        # --- Apply Selected Algorithm ---
+        # Run algorithm
         if algorithm == "Apriori":
             st.write(f"🔍 Running **Apriori** with min_support = {min_support}")
             freq_items = apriori(df, min_support=min_support, use_colnames=True)
@@ -67,31 +82,29 @@ if df is not None:
             st.write(f"⚡ Running **FP-Growth** with min_support = {min_support}")
             freq_items = fpgrowth(df, min_support=min_support, use_colnames=True)
 
-        # --- Filter by pattern length ---
+        # Filter by pattern length
         if fix_k and not freq_items.empty:
             freq_items['length'] = freq_items['itemsets'].apply(lambda x: len(x))
             freq_items = freq_items[freq_items['length'] == k_value]
 
-        # --- Display Results ---
         if not freq_items.empty:
             st.write("### 📊 Frequent Itemsets")
             st.dataframe(freq_items)
 
-            # --- Generate Association Rules ---
             st.write("### 🔗 Association Rules")
             rules = association_rules(freq_items, metric="lift", min_threshold=1.0)
             st.dataframe(rules)
 
-            # --- Visualization ---
             st.write("### 📈 Top Frequent Itemsets by Support")
             top_items = freq_items.sort_values("support", ascending=False).head(10)
             top_items.index = top_items['itemsets'].apply(lambda x: ', '.join(list(x)))
             st.bar_chart(top_items['support'])
         else:
-            st.warning("No frequent itemsets found with the current settings.")
+            st.warning("No frequent itemsets found for the current parameters.")
 
     except Exception as e:
         st.error(f"❌ Error: {e}")
+
 else:
     st.info("⬆️ Please upload a CSV file or use the sample dataset to begin.")
 
