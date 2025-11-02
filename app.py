@@ -1,31 +1,27 @@
 import streamlit as st
 import pandas as pd
-from mlxtend.frequent_patterns import apriori, fpgrowth
-from mlxtend.frequent_patterns import association_rules
+import subprocess
+import sys
 
-# Streamlit App
+# --- Ensure mlxtend is installed ---
+try:
+    from mlxtend.frequent_patterns import apriori, fpgrowth, association_rules
+except ModuleNotFoundError:
+    st.warning("Installing missing dependency: mlxtend...")
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "mlxtend"])
+    from mlxtend.frequent_patterns import apriori, fpgrowth, association_rules
+
+# --- Streamlit Page Setup ---
 st.set_page_config(page_title="Frequent Pattern Mining Dashboard", layout="wide")
-
 st.title("🧩 Frequent Pattern Mining Dashboard")
-st.write("Mine frequent itemsets using **Apriori** or **FP-Growth** algorithm.")
+st.write("Explore frequent itemsets using **Apriori** or **FP-Growth** algorithms.")
 
-# Sidebar Controls
+# --- Sidebar Controls ---
 st.sidebar.header("⚙️ Configuration")
 
-uploaded_file = st.sidebar.file_uploader("Upload Transaction Dataset (CSV)", type=["csv"])
-
-algorithm = st.sidebar.selectbox(
-    "Select Algorithm",
-    ["Apriori", "FP-Growth"]
-)
-
-min_support = st.sidebar.slider(
-    "Minimum Support (Relative %)",
-    min_value=0.01,
-    max_value=1.0,
-    value=0.2,
-    step=0.01
-)
+uploaded_file = st.sidebar.file_uploader("Upload CSV (Transactional or One-Hot Encoded)", type=["csv"])
+algorithm = st.sidebar.selectbox("Select Algorithm", ["Apriori", "FP-Growth"])
+min_support = st.sidebar.slider("Minimum Support (Relative %)", 0.01, 1.0, 0.2, 0.01)
 
 fix_k = st.sidebar.checkbox("Fix pattern length (k)?", value=False)
 if fix_k:
@@ -33,45 +29,53 @@ if fix_k:
 else:
     k_value = None
 
+# --- Main Section ---
 if uploaded_file is not None:
-    # Load dataset
-    df = pd.read_csv(uploaded_file)
-    st.write("### 📄 Preview of Uploaded Data")
-    st.dataframe(df.head())
+    try:
+        df = pd.read_csv(uploaded_file)
+        st.write("### 📄 Preview of Uploaded Data")
+        st.dataframe(df.head())
 
-    # Check if dataset is one-hot encoded or needs encoding
-    if df.dtypes.isin(['object']).any():
-        st.info("🧮 Detected non-numeric data — performing one-hot encoding.")
-        df = pd.get_dummies(df)
+        # --- One-hot encode if necessary ---
+        if df.dtypes.isin(['object']).any():
+            st.info("🧮 Detected non-numeric data — performing one-hot encoding.")
+            df = pd.get_dummies(df)
 
-    st.write("### ✅ Encoded Data")
-    st.dataframe(df.head())
+        st.write("### ✅ Encoded Data Preview")
+        st.dataframe(df.head())
 
-    # Algorithm selection
-    if algorithm == "Apriori":
-        st.write(f"🔍 Running **Apriori** with min_support = {min_support}")
-        freq_items = apriori(df, min_support=min_support, use_colnames=True)
-    else:
-        st.write(f"⚡ Running **FP-Growth** with min_support = {min_support}")
-        freq_items = fpgrowth(df, min_support=min_support, use_colnames=True)
+        # --- Apply Algorithm ---
+        if algorithm == "Apriori":
+            st.write(f"🔍 Running **Apriori** with min_support = {min_support}")
+            freq_items = apriori(df, min_support=min_support, use_colnames=True)
+        else:
+            st.write(f"⚡ Running **FP-Growth** with min_support = {min_support}")
+            freq_items = fpgrowth(df, min_support=min_support, use_colnames=True)
 
-    # Filter by pattern length if specified
-    if fix_k and not freq_items.empty:
-        freq_items['length'] = freq_items['itemsets'].apply(lambda x: len(x))
-        freq_items = freq_items[freq_items['length'] == k_value]
+        # --- Filter by k if needed ---
+        if fix_k and not freq_items.empty:
+            freq_items['length'] = freq_items['itemsets'].apply(lambda x: len(x))
+            freq_items = freq_items[freq_items['length'] == k_value]
 
-    # Display Results
-    if not freq_items.empty:
-        st.write("### 📊 Frequent Itemsets")
-        st.dataframe(freq_items)
+        # --- Display Results ---
+        if not freq_items.empty:
+            st.write("### 📊 Frequent Itemsets")
+            st.dataframe(freq_items)
 
-        # Show association rules
-        st.write("### 🔗 Association Rules")
-        rules = association_rules(freq_items, metric="lift", min_threshold=1.0)
-        st.dataframe(rules)
-    else:
-        st.warning("No frequent itemsets found with the current settings.")
+            # --- Generate Association Rules ---
+            st.write("### 🔗 Association Rules")
+            rules = association_rules(freq_items, metric="lift", min_threshold=1.0)
+            st.dataframe(rules)
 
+            # --- Optional Visualization ---
+            st.write("### 📈 Top Frequent Itemsets by Support")
+            top_items = freq_items.sort_values("support", ascending=False).head(10)
+            st.bar_chart(top_items.set_index(top_items['itemsets'].apply(lambda x: ', '.join(list(x))))['support'])
+        else:
+            st.warning("No frequent itemsets found with the current settings.")
+
+    except Exception as e:
+        st.error(f"❌ Error processing file: {e}")
 else:
     st.info("⬆️ Please upload a CSV file to begin.")
 
