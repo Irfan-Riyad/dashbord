@@ -1,25 +1,26 @@
 import streamlit as st
 import pandas as pd
-import subprocess
-import sys
-
-# --- Ensure mlxtend is installed ---
-try:
-    from mlxtend.frequent_patterns import apriori, fpgrowth, association_rules
-except ModuleNotFoundError:
-    st.warning("Installing missing dependency: mlxtend...")
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "mlxtend"])
-    from mlxtend.frequent_patterns import apriori, fpgrowth, association_rules
+from mlxtend.frequent_patterns import apriori, fpgrowth, association_rules
 
 # --- Streamlit Page Setup ---
 st.set_page_config(page_title="Frequent Pattern Mining Dashboard", layout="wide")
+
 st.title("🧩 Frequent Pattern Mining Dashboard")
-st.write("Explore frequent itemsets using **Apriori** or **FP-Growth** algorithms.")
+st.write("Mine frequent itemsets using **Apriori** or **FP-Growth** algorithms from the `mlxtend` library.")
 
 # --- Sidebar Controls ---
 st.sidebar.header("⚙️ Configuration")
 
-uploaded_file = st.sidebar.file_uploader("Upload CSV (Transactional or One-Hot Encoded)", type=["csv"])
+# Option to upload dataset or use sample data
+data_option = st.sidebar.radio(
+    "Select Dataset Option:",
+    ["Upload CSV", "Use Sample Dataset"]
+)
+
+uploaded_file = None
+if data_option == "Upload CSV":
+    uploaded_file = st.sidebar.file_uploader("Upload your CSV file", type=["csv"])
+
 algorithm = st.sidebar.selectbox("Select Algorithm", ["Apriori", "FP-Growth"])
 min_support = st.sidebar.slider("Minimum Support (Relative %)", 0.01, 1.0, 0.2, 0.01)
 
@@ -29,14 +30,28 @@ if fix_k:
 else:
     k_value = None
 
-# --- Main Section ---
-if uploaded_file is not None:
-    try:
+# --- Load Dataset ---
+if data_option == "Use Sample Dataset":
+    st.info("Using sample market basket dataset.")
+    df = pd.DataFrame({
+        'milk': [1, 1, 0, 1, 0],
+        'bread': [1, 0, 1, 1, 1],
+        'butter': [0, 1, 1, 1, 1],
+        'cheese': [0, 0, 1, 0, 1]
+    })
+else:
+    if uploaded_file is not None:
         df = pd.read_csv(uploaded_file)
+    else:
+        df = None
+
+# --- Run Analysis ---
+if df is not None:
+    try:
         st.write("### 📄 Preview of Uploaded Data")
         st.dataframe(df.head())
 
-        # --- One-hot encode if necessary ---
+        # --- One-hot encoding if needed ---
         if df.dtypes.isin(['object']).any():
             st.info("🧮 Detected non-numeric data — performing one-hot encoding.")
             df = pd.get_dummies(df)
@@ -44,7 +59,7 @@ if uploaded_file is not None:
         st.write("### ✅ Encoded Data Preview")
         st.dataframe(df.head())
 
-        # --- Apply Algorithm ---
+        # --- Apply Selected Algorithm ---
         if algorithm == "Apriori":
             st.write(f"🔍 Running **Apriori** with min_support = {min_support}")
             freq_items = apriori(df, min_support=min_support, use_colnames=True)
@@ -52,7 +67,7 @@ if uploaded_file is not None:
             st.write(f"⚡ Running **FP-Growth** with min_support = {min_support}")
             freq_items = fpgrowth(df, min_support=min_support, use_colnames=True)
 
-        # --- Filter by k if needed ---
+        # --- Filter by pattern length ---
         if fix_k and not freq_items.empty:
             freq_items['length'] = freq_items['itemsets'].apply(lambda x: len(x))
             freq_items = freq_items[freq_items['length'] == k_value]
@@ -67,17 +82,18 @@ if uploaded_file is not None:
             rules = association_rules(freq_items, metric="lift", min_threshold=1.0)
             st.dataframe(rules)
 
-            # --- Optional Visualization ---
+            # --- Visualization ---
             st.write("### 📈 Top Frequent Itemsets by Support")
             top_items = freq_items.sort_values("support", ascending=False).head(10)
-            st.bar_chart(top_items.set_index(top_items['itemsets'].apply(lambda x: ', '.join(list(x))))['support'])
+            top_items.index = top_items['itemsets'].apply(lambda x: ', '.join(list(x)))
+            st.bar_chart(top_items['support'])
         else:
             st.warning("No frequent itemsets found with the current settings.")
 
     except Exception as e:
-        st.error(f"❌ Error processing file: {e}")
+        st.error(f"❌ Error: {e}")
 else:
-    st.info("⬆️ Please upload a CSV file to begin.")
+    st.info("⬆️ Please upload a CSV file or use the sample dataset to begin.")
 
 st.markdown("---")
 st.caption("Built with ❤️ using Streamlit + mlxtend")
